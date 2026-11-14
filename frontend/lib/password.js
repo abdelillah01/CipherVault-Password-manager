@@ -10,6 +10,7 @@ export function getStrength(password) {
   if (!password) return '';
   const variety = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter((re) => re.test(password)).length;
   if (password.length < 8 || variety <= 1) return 'weak';
+  if (password.length < 12 && variety <= 2) return 'weak';
   if (password.length >= 12 && variety >= 3) return 'strong';
   if (password.length >= 16 && variety >= 2) return 'strong';
   return 'medium';
