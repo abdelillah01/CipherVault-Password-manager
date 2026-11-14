@@ -165,6 +165,7 @@ The API base URL defaults to `http://localhost:8000/api`. To point the frontend 
 
 ```bash
 NEXT_PUBLIC_API_URL=https://your-api.example.com/api
+NEXT_PUBLIC_SITE_URL=https://your-site.example.com   # used for social preview image URLs
 ```
 
 > `--legacy-peer-deps` is needed because `eslint-config-next@16` declares a peer dependency on ESLint 9, while the project pins ESLint 8.

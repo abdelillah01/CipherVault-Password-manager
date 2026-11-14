@@ -1,36 +1,56 @@
-This is a [Next.js](https://nextjs.org/) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# CipherVault — frontend
 
-## Getting Started
+Next.js 14 (App Router) client for CipherVault. All encryption and decryption happens here, in the browser; the Django API only ever receives ciphertext. See the [root README](../README.md) for the full project overview and security model.
 
-First, run the development server:
+## Run
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install --legacy-peer-deps
+npm run dev          # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Production build:
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+```bash
+npm run build
+npm start
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/basic-features/font-optimization) to automatically optimize and load Inter, a custom Google Font.
+The Django API must be running on `http://localhost:8000` (see the root README).
 
-## Learn More
+## Environment
 
-To learn more about Next.js, take a look at the following resources:
+| Variable | Default | Purpose |
+|---|---|---|
+| `NEXT_PUBLIC_API_URL` | `http://localhost:8000/api` | Base URL of the Django API |
+| `NEXT_PUBLIC_SITE_URL` | `http://localhost:3000` | Absolute URL used for Open Graph and Twitter preview images |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Put overrides in `.env.local`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js/) - your feedback and contributions are welcome!
+## Layout
 
-## Deploy on Vercel
+```
+app/
+  layout.js            fonts, metadata, theme colour
+  page.js              landing page
+  login/  register/    auth pages
+  dashboard/           vault: data loading, filtering, shortcuts, auto-lock
+  not-found.js         404 page
+  manifest.js          web app manifest
+  icon.svg  favicon.ico  apple-icon.png  opengraph-image.png  twitter-image.png
+components/
+  vault/               Sidebar, EntryList, EntryDetail, EntryEditor
+  AuthShell.js         shared auth layout and form fields
+  ui.js                logo, dialog, toast, strength meter, monogram, spinner
+  icons.js             stroke icon set
+lib/
+  crypto.js            PBKDF2 key derivation, AES-256-GCM encrypt/decrypt
+  password.js          strength scoring and CSPRNG password generator
+  api.js               axios instance and error helper
+  store.js             in-memory auth store (Zustand)
+public/icons/          manifest icons (192, 512, maskable)
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Design tokens
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/deployment) for more details.
+Colours are defined once as RGB triplets in `app/globals.css` and exposed to Tailwind in `tailwind.config.js` (`bg`, `surface`, `raised`, `line`, `fg`, `muted`, `faint`, `accent`, `danger`, `warn`), so opacity modifiers like `bg-accent/10` work. The UI is dark only.
