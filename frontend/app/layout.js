@@ -15,10 +15,30 @@ const mono = localFont({
   display: 'swap',
 });
 
+const description =
+  'A zero-knowledge password manager. Every secret is encrypted in your browser with AES-256-GCM; the server only stores ciphertext.';
+
 export const metadata = {
-  title: 'CipherVault — Zero-knowledge password manager',
-  description:
-    'A password manager that encrypts everything in your browser with AES-256-GCM. The server only ever stores ciphertext.',
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'),
+  title: {
+    default: 'CipherVault — Zero-knowledge password manager',
+    template: '%s · CipherVault',
+  },
+  description,
+  applicationName: 'CipherVault',
+  keywords: ['password manager', 'zero-knowledge', 'AES-256-GCM', 'end-to-end encryption', 'Next.js', 'Django'],
+  openGraph: {
+    type: 'website',
+    siteName: 'CipherVault',
+    title: 'CipherVault — Zero-knowledge password manager',
+    description,
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'CipherVault — Zero-knowledge password manager',
+    description,
+  },
+  robots: { index: true, follow: true },
 };
 
 export const viewport = {
