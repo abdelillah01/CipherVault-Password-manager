@@ -1,362 +1,308 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import axios from 'axios';
-import { useAuthStore, usePasswordStore } from '@/lib/store';
-import PasswordList from '@/components/PasswordList';
-import PasswordModal from '@/components/PasswordModal';
+import api, { errorMessage } from '@/lib/api';
+import { CryptoService } from '@/lib/crypto';
+import { getStrength } from '@/lib/password';
+import { useAuthStore } from '@/lib/store';
+import { ConfirmDialog, ToastProvider, useToast } from '@/components/ui';
+import Sidebar from '@/components/vault/Sidebar';
+import EntryList from '@/components/vault/EntryList';
+import EntryDetail from '@/components/vault/EntryDetail';
+import EntryEditor from '@/components/vault/EntryEditor';
 
-axios.defaults.withCredentials = true;
+const AUTO_LOCK_MS = 10 * 60 * 1000;
 
-export default function Dashboard() {
+export default function DashboardPage() {
+  return (
+    <ToastProvider>
+      <Vault />
+    </ToastProvider>
+  );
+}
+
+function Vault() {
   const router = useRouter();
+  const toast = useToast();
   const { user, masterKey, clearAuth } = useAuthStore();
-  const { passwords, setPasswords } = usePasswordStore();
-  const [showModal, setShowModal] = useState(false);
-  const [editItem, setEditItem] = useState(null);
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState({ folder: '', favorite: false, strength: '' });
-  const [isLoading, setIsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('all');
 
-  useEffect(() => {
-    if (!user || !masterKey) {
-      router.push('/login');
-      return;
-    }
-    fetchPasswords();
+  const [items, setItems] = useState([]);
+  const [strengths, setStrengths] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [view, setView] = useState({ type: 'all' });
+  const [query, setQuery] = useState('');
+  const [selectedId, setSelectedId] = useState(null);
+  const [editor, setEditor] = useState({ open: false, item: null, regenerate: false });
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const searchRef = useRef(null);
 
-    let timeout;
-    const resetTimeout = () => {
-      clearTimeout(timeout);
-      timeout = setTimeout(() => {
-        handleLogout();
-      }, 600000);
-    };
+  /* ---------- session ---------- */
 
-    window.addEventListener('mousemove', resetTimeout);
-    window.addEventListener('keypress', resetTimeout);
-    resetTimeout();
-
-    return () => {
-      clearTimeout(timeout);
-      window.removeEventListener('mousemove', resetTimeout);
-      window.removeEventListener('keypress', resetTimeout);
-    };
-  }, [user, masterKey]);
-
-  const fetchPasswords = async () => {
-    setIsLoading(true);
+  const lock = useCallback(async () => {
     try {
-      const params = new URLSearchParams();
-      if (search) params.append('search', search);
-      if (filter.folder) params.append('folder', filter.folder);
-      if (filter.favorite) params.append('favorite', 'true');
-      if (filter.strength) params.append('strength', filter.strength);
-
-      const res = await axios.get(`http://localhost:8000/api/items/?${params}`);
-      setPasswords(res.data);
-    } catch (err) {
-      console.error('Failed to fetch passwords:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      await axios.post('http://localhost:8000/api/logout/');
-    } catch (err) {
-      console.error('Logout error:', err);
+      await api.post('/logout/');
+    } catch {
+      /* session may already be gone */
     }
     clearAuth();
     router.push('/login');
+  }, [clearAuth, router]);
+
+  useEffect(() => {
+    if (!user || !masterKey) router.replace('/login');
+  }, [user, masterKey, router]);
+
+  // Auto-lock after inactivity.
+  useEffect(() => {
+    if (!masterKey) return;
+    let timer;
+    const reset = () => {
+      clearTimeout(timer);
+      timer = setTimeout(lock, AUTO_LOCK_MS);
+    };
+    const events = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'];
+    events.forEach((e) => window.addEventListener(e, reset, { passive: true }));
+    reset();
+    return () => {
+      clearTimeout(timer);
+      events.forEach((e) => window.removeEventListener(e, reset));
+    };
+  }, [masterKey, lock]);
+
+  /* ---------- data ---------- */
+
+  // Decrypt each entry once to score its strength; plaintext is discarded immediately.
+  const scoreAll = useCallback(
+    async (list) => {
+      const pairs = await Promise.all(
+        list.map(async (it) => {
+          try {
+            return [it.id, getStrength(await CryptoService.decrypt(it.encrypted_data, it.iv, masterKey))];
+          } catch {
+            return [it.id, ''];
+          }
+        })
+      );
+      setStrengths(Object.fromEntries(pairs));
+    },
+    [masterKey]
+  );
+
+  const load = useCallback(async () => {
+    if (!masterKey) return;
+    setLoading(true);
+    try {
+      const res = await api.get('/items/');
+      setItems(res.data);
+      await scoreAll(res.data);
+    } catch (err) {
+      if (err?.response?.status === 403 || err?.response?.status === 401) return lock();
+      toast(errorMessage(err, 'Could not load vault'), 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, [masterKey, scoreAll, lock, toast]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  /* ---------- derived ---------- */
+
+  const folders = useMemo(() => {
+    const m = new Map();
+    items.forEach((i) => i.folder && m.set(i.folder, (m.get(i.folder) || 0) + 1));
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [items]);
+
+  const counts = useMemo(
+    () => ({
+      all: items.length,
+      favorites: items.filter((i) => i.favorite).length,
+      weak: items.filter((i) => strengths[i.id] === 'weak').length,
+    }),
+    [items, strengths]
+  );
+
+  const inView = useMemo(() => {
+    switch (view.type) {
+      case 'favorites':
+        return items.filter((i) => i.favorite);
+      case 'weak':
+        return items.filter((i) => strengths[i.id] === 'weak');
+      case 'folder':
+        return items.filter((i) => i.folder === view.folder);
+      default:
+        return items;
+    }
+  }, [items, strengths, view]);
+
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return inView;
+    return inView.filter((i) =>
+      [i.website, i.username, i.folder].some((f) => f && f.toLowerCase().includes(q))
+    );
+  }, [inView, query]);
+
+  const selected = items.find((i) => i.id === selectedId) || null;
+
+  const viewTitle =
+    view.type === 'favorites' ? 'Favorites' : view.type === 'weak' ? 'Weak passwords' : view.type === 'folder' ? view.folder : 'All items';
+
+  // On wide screens keep something selected so the detail pane is never blank.
+  useEffect(() => {
+    const wide = window.matchMedia('(min-width: 1024px)').matches;
+    if (!wide) return;
+    if (!visible.some((i) => i.id === selectedId)) setSelectedId(visible[0]?.id ?? null);
+  }, [visible, selectedId]);
+
+  /* ---------- keyboard ---------- */
+
+  useEffect(() => {
+    const onKey = (e) => {
+      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName);
+      if (editor.open || pendingDelete) return;
+      if (e.key === '/' && !typing) {
+        e.preventDefault();
+        searchRef.current?.focus();
+      } else if ((e.key === 'n' || e.key === 'N') && !typing && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        setEditor({ open: true, item: null, regenerate: false });
+      } else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && visible.length) {
+        if (typing && document.activeElement !== searchRef.current) return;
+        e.preventDefault();
+        const idx = visible.findIndex((i) => i.id === selectedId);
+        const next = e.key === 'ArrowDown' ? Math.min(idx + 1, visible.length - 1) : Math.max(idx - 1, 0);
+        const id = visible[next].id;
+        setSelectedId(id);
+        document.querySelector(`[data-id="${id}"]`)?.scrollIntoView({ block: 'nearest' });
+      } else if (e.key === 'Escape' && typing && document.activeElement === searchRef.current) {
+        setQuery('');
+        searchRef.current.blur();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [editor.open, pendingDelete, visible, selectedId]);
+
+  /* ---------- mutations ---------- */
+
+  const handleSaved = async (saved) => {
+    setEditor({ open: false, item: null, regenerate: false });
+    setItems((list) => {
+      const exists = list.some((i) => i.id === saved.id);
+      const next = exists ? list.map((i) => (i.id === saved.id ? saved : i)) : [saved, ...list];
+      return next.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+    });
+    setSelectedId(saved.id);
+    try {
+      const plain = await CryptoService.decrypt(saved.encrypted_data, saved.iv, masterKey);
+      setStrengths((s) => ({ ...s, [saved.id]: getStrength(plain) }));
+    } catch {
+      /* ignore */
+    }
   };
 
-  const handleEdit = (item) => {
-    setEditItem(item);
-    setShowModal(true);
+  const toggleFavorite = async (item) => {
+    const favorite = !item.favorite;
+    setItems((list) => list.map((i) => (i.id === item.id ? { ...i, favorite } : i)));
+    try {
+      await api.patch(`/items/${item.id}/`, { favorite });
+    } catch (err) {
+      setItems((list) => list.map((i) => (i.id === item.id ? { ...i, favorite: item.favorite } : i)));
+      toast(errorMessage(err, 'Could not update'), 'error');
+    }
   };
 
-  const handleCloseModal = () => {
-    setShowModal(false);
-    setEditItem(null);
-    fetchPasswords();
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/items/${pendingDelete.id}/`);
+      setItems((list) => list.filter((i) => i.id !== pendingDelete.id));
+      if (selectedId === pendingDelete.id) setSelectedId(null);
+      toast('Item deleted');
+      setPendingDelete(null);
+    } catch (err) {
+      toast(errorMessage(err, 'Could not delete'), 'error');
+    } finally {
+      setDeleting(false);
+    }
   };
 
-  // Calculate statistics
-  const totalPasswords = passwords.length;
-  const favoriteCount = passwords.filter(p => p.favorite).length;
-  const weakPasswordCount = passwords.filter(p => p.strength === 'weak').length;
-  const strongPasswordCount = passwords.filter(p => p.strength === 'strong').length;
-  const folders = [...new Set(passwords.map(p => p.folder).filter(Boolean))];
-
-  // SVG Icons
-  const ShieldIcon = () => (
-    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-    </svg>
-  );
-
-  const SearchIcon = () => (
-    <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-    </svg>
-  );
-
-  const UserIcon = () => (
-    <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-    </svg>
-  );
-
-  const LogoutIcon = () => (
-    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-    </svg>
-  );
-
-  const PlusIcon = () => (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-    </svg>
-  );
-
-  const FilterIcon = () => (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-    </svg>
-  );
-
-  const RefreshIcon = () => (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-    </svg>
-  );
+  if (!user || !masterKey) return null;
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
-      {/* Top Navigation */}
-      <header className="sticky top-0 z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
-        <div className="container mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="p-2 bg-gradient-to-r from-blue-600 to-blue-500 rounded-lg">
-                <ShieldIcon />
-              </div>
-              <div>
-                <h1 className="text-xl font-semibold text-slate-900 dark:text-white">CipherVault</h1>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Secure Password Manager</p>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-6">
-              {/* Search Bar */}
-              <div className="relative hidden md:block">
-                <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
-                  <SearchIcon />
-                </div>
-                <input
-                  type="text"
-                  placeholder="Search passwords..."
-                  className="pl-10 pr-4 py-2 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent w-64"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && fetchPasswords()}
-                />
-              </div>
-              
-              <div className="flex items-center gap-4">
-                <div className="hidden sm:flex items-center gap-2 text-slate-600 dark:text-slate-400">
-                  <UserIcon />
-                  <span className="text-sm">{user?.email}</span>
-                </div>
-                <button
-                  onClick={handleLogout}
-                  className="px-4 py-2 text-sm bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg transition-colors flex items-center gap-2"
-                >
-                  <LogoutIcon />
-                  <span className="hidden sm:inline">Logout</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
+    <div className="flex h-screen overflow-hidden">
+      <Sidebar
+        user={user}
+        view={view}
+        setView={(v) => {
+          setView(v);
+          setQuery('');
+        }}
+        counts={counts}
+        folders={folders}
+        onNew={() => setEditor({ open: true, item: null, regenerate: false })}
+        onLock={lock}
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+      />
 
-      <div className="container mx-auto px-6 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-          {/* Sidebar */}
-          <div className="lg:col-span-1">
-            <div className="space-y-6">
-              {/* Quick Stats */}
-              
+      <EntryList
+        ref={searchRef}
+        title={viewTitle}
+        items={visible}
+        total={inView.length}
+        strengths={strengths}
+        selectedId={selectedId}
+        onSelect={setSelectedId}
+        query={query}
+        setQuery={setQuery}
+        loading={loading}
+        onRefresh={load}
+        onNew={() => setEditor({ open: true, item: null, regenerate: false })}
+        onMenu={() => setMenuOpen(true)}
+      />
 
-              {/* Quick Actions */}
-              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
-                <h3 className="font-semibold text-slate-900 dark:text-white mb-4">Quick Actions</h3>
-                <div className="space-y-3">
-                  <button
-                    onClick={() => setShowModal(true)}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
-                  >
-                    <PlusIcon />
-                    Add New Password
-                  </button>
-                  <button
-                    onClick={fetchPasswords}
-                    disabled={isLoading}
-                    className="w-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 py-2.5 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-                  >
-                    <RefreshIcon />
-                    {isLoading ? 'Refreshing...' : 'Refresh List'}
-                  </button>
-                </div>
-              </div>
-
-              {/* Filters */}
-              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <FilterIcon />
-                  <h3 className="font-semibold text-slate-900 dark:text-white">Filters</h3>
-                </div>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm text-slate-600 dark:text-slate-400 mb-2">By Strength</label>
-                    <select
-                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
-                      value={filter.strength}
-                      onChange={(e) => setFilter({ ...filter, strength: e.target.value })}
-                    >
-                      <option value="">All Strengths</option>
-                      <option value="strong">Strong Only</option>
-                      <option value="medium">Medium Only</option>
-                      <option value="weak">Weak Only</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm text-slate-600 dark:text-slate-400 mb-2">By Folder</label>
-                    <select
-                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm"
-                      value={filter.folder}
-                      onChange={(e) => setFilter({ ...filter, folder: e.target.value })}
-                    >
-                      <option value="">All Folders</option>
-                      {folders.map((folder) => (
-                        <option key={folder} value={folder}>{folder}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={filter.favorite}
-                      onChange={(e) => setFilter({ ...filter, favorite: e.target.checked })}
-                      className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500"
-                    />
-                    <span className="text-sm text-slate-600 dark:text-slate-400">Favorites Only</span>
-                  </label>
-                  <button
-                    onClick={() => setFilter({ folder: '', favorite: false, strength: '' })}
-                    className="w-full text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white py-2"
-                  >
-                    Clear Filters
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Main Content */}
-          <div className="lg:col-span-3">
-            {/* Header */}
-            <div className="mb-8">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                <div>
-                  <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Your Passwords</h2>
-                  <p className="text-slate-600 dark:text-slate-400 mt-1">
-                    {totalPasswords} password{totalPasswords !== 1 ? 's' : ''} stored securely
-                  </p>
-                </div>
-                
-                {/* Mobile Search */}
-                <div className="relative sm:hidden">
-                  <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
-                    <SearchIcon />
-                  </div>
-                  <input
-                    type="text"
-                    placeholder="Search passwords..."
-                    className="w-full pl-10 pr-4 py-2 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && fetchPasswords()}
-                  />
-                </div>
-              </div>
-
-              {/* Tabs */}
-              <div className="flex space-x-1 border-b border-slate-200 dark:border-slate-800">
-                {['all', 'weak', 'favorites'].map((tab) => (
-                  <button
-                    key={tab}
-                    className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
-                      activeTab === tab
-                        ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-500'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-300'
-                    }`}
-                    onClick={() => {
-                      setActiveTab(tab);
-                      if (tab === 'weak') setFilter({ ...filter, strength: 'weak' });
-                      else if (tab === 'favorites') setFilter({ ...filter, favorite: true });
-                      else setFilter({ ...filter, strength: '', favorite: false });
-                    }}
-                  >
-                    {tab === 'all' && 'All Passwords'}
-                    {tab === 'weak' && `Weak (${weakPasswordCount})`}
-                    {tab === 'favorites' && `Favorites (${favoriteCount})`}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Password List */}
-            <PasswordList 
-              passwords={passwords} 
-              onEdit={handleEdit} 
-              onRefresh={fetchPasswords}
-              isLoading={isLoading}
-            />
-
-            {/* Empty State */}
-            {!isLoading && passwords.length === 0 && (
-              <div className="text-center py-12">
-                <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <ShieldIcon className="w-8 h-8 text-blue-600 dark:text-blue-400" />
-                </div>
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">
-                  No passwords yet
-                </h3>
-                <p className="text-slate-600 dark:text-slate-400 mb-6">
-                  Add your first password to get started
-                </p>
-                <button
-                  onClick={() => setShowModal(true)}
-                  className="bg-blue-600 hover:bg-blue-700 text-white py-2.5 px-6 rounded-lg transition-colors inline-flex items-center gap-2"
-                >
-                  <PlusIcon />
-                  Add New Password
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
+      {/* Detail: a column on desktop, a full-screen sheet below lg */}
+      <div
+        className={`${
+          selected ? 'fixed inset-0 z-30 flex animate-fade-in lg:animate-none' : 'hidden'
+        } lg:static lg:z-auto lg:flex lg:flex-1`}
+      >
+        <EntryDetail
+          item={selected}
+          masterKey={masterKey}
+          strength={selected ? strengths[selected.id] : ''}
+          onBack={() => setSelectedId(null)}
+          onEdit={(item, opts) => setEditor({ open: true, item, regenerate: !!opts?.regenerate })}
+          onDelete={setPendingDelete}
+          onToggleFavorite={toggleFavorite}
+        />
       </div>
 
-      {/* Modal */}
-      {showModal && (
-        <PasswordModal item={editItem} onClose={handleCloseModal} />
-      )}
+      <EntryEditor
+        open={editor.open}
+        item={editor.item}
+        regenerate={editor.regenerate}
+        masterKey={masterKey}
+        folders={folders.map(([f]) => f)}
+        onClose={() => setEditor({ open: false, item: null, regenerate: false })}
+        onSaved={handleSaved}
+      />
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        title={`Delete ${pendingDelete?.website || 'this item'}?`}
+        body="The encrypted entry is removed from the server. This cannot be undone."
+        onCancel={() => !deleting && setPendingDelete(null)}
+        onConfirm={confirmDelete}
+        busy={deleting}
+      />
     </div>
   );
 }

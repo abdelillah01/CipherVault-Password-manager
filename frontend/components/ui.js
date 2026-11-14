@@ -38,11 +38,11 @@ export function StrengthMeter({ strength, showLabel = true, className = '' }) {
   const meta = STRENGTH_META[strength];
   return (
     <div className={`flex items-center gap-2.5 ${className}`}>
-      <div className="flex gap-1" aria-hidden="true">
+      <div className="flex shrink-0 gap-1" aria-hidden="true">
         {[1, 2, 3].map((i) => (
           <span
             key={i}
-            className={`h-1 w-6 rounded-full transition-colors duration-200 ${
+            className={`h-1 w-6 shrink-0 rounded-full transition-colors duration-200 ${
               meta && i <= meta.bars ? meta.fill : 'bg-line-strong'
             }`}
           />
@@ -155,7 +155,7 @@ export function ToastProvider({ children }) {
     <ToastContext.Provider value={push}>
       {children}
       <div className="pointer-events-none fixed bottom-4 left-1/2 z-[60] flex -translate-x-1/2 flex-col items-center gap-2">
-        {toasts.map((t) => (
+        {toasts.slice(-3).map((t) => (
           <div
             key={t.id}
             role="status"
