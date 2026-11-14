@@ -1,212 +1,233 @@
-#  Zero-Knowledge Password Manager
-
-![Django](https://img.shields.io/badge/Django-5.1-092E20?style=for-the-badge&logo=django&logoColor=white)
-![Next.js](https://img.shields.io/badge/Next.js-14-000000?style=for-the-badge&logo=next.js&logoColor=white)
-![Python](https://img.shields.io/badge/Python-3.13-3776AB?style=for-the-badge&logo=python&logoColor=white)
-![JavaScript](https://img.shields.io/badge/JavaScript-ES6+-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black)
-![Security](https://img.shields.io/badge/Security-AES--256--GCM-red?style=for-the-badge)
-
-Zero-knowledge password manager where **the server never sees your decrypted passwords**. Built with modern web technologies and cryptographic best practices, this application ensures your sensitive data remains private through client-side encryption.
+<h1 align="center">CipherVault</h1>
 
 <p align="center">
-  <img src="assets/Homepage.png" alt="pass tracker" width="800">
-  <br>
-  <p align="center">
-  <img src="assets/Dashboard.png" alt="pass tracker" width="800">
-  <br>
+  A zero-knowledge password manager. Every secret is encrypted in the browser with AES-256-GCM<br>
+  before it is sent, so the server only ever stores ciphertext it cannot read.
 </p>
----
 
-##  Key Features
+<p align="center">
+  <img src="https://img.shields.io/badge/Next.js-14-000000?style=flat-square&logo=next.js&logoColor=white" alt="Next.js 14">
+  <img src="https://img.shields.io/badge/Django-5.1-092E20?style=flat-square&logo=django&logoColor=white" alt="Django 5.1">
+  <img src="https://img.shields.io/badge/DRF-3.15-a30000?style=flat-square" alt="Django REST Framework">
+  <img src="https://img.shields.io/badge/Tailwind-3.4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white" alt="Tailwind CSS">
+  <img src="https://img.shields.io/badge/crypto-AES--256--GCM-34d399?style=flat-square" alt="AES-256-GCM">
+</p>
 
--  **Zero-Knowledge Architecture** - Server only stores encrypted data
--  **Client-Side AES-256-GCM Encryption** - All encryption happens in your browser
--  **Argon2id Password Hashing** - Industry-standard password security
--  **Master Password Never Stored** - Even we can't access your passwords
--  **Folder Organization** - Group passwords by categories
--  **Favorites** - Quick access to frequently used passwords
--  **Search & Filter** - Find passwords instantly
--  **Auto-Lock** - Automatic logout after 10 minutes of inactivity
--  **RESTful API** - Clean, documented backend architecture
--  **Modern UI** - Built with Tailwind CSS for a clean, responsive interface
--  **Rate Limiting** - Protection against brute-force attacks
--  **CORS-Enabled** - Secure cross-origin resource sharing
+<p align="center">
+  <img src="assets/screenshots/dashboard.png" alt="CipherVault vault view: sidebar with folders, item list, and the detail pane for github.com" width="100%">
+</p>
 
 ---
 
-##  Tech Stack
+## Contents
 
-### Backend
-- **Framework:** Django 5.1 + Django REST Framework 3.15
-- **Database:** SQLite (development) / PostgreSQL (production-ready)
-- **Password Hashing:** Argon2id via `django-argon2`
-- **Authentication:** Session-based with CSRF exemption for API
-- **Rate Limiting:** Built-in DRF throttling
-- **CORS:** `django-cors-headers`
+- [Screenshots](#screenshots)
+- [Features](#features)
+- [How it works](#how-it-works)
+- [Security model](#security-model)
+- [Getting started](#getting-started)
+- [Project structure](#project-structure)
+- [API](#api)
+- [Challenges along the way](#challenges-along-the-way)
+- [Roadmap](#roadmap)
 
-### Frontend
-- **Framework:** Next.js 14 (App Router)
-- **Language:** JavaScript (ES6+)
-- **Styling:** Tailwind CSS
-- **State Management:** Zustand
-- **HTTP Client:** Axios
-- **Encryption:** Web Crypto API (browser-native)
+## Screenshots
 
-### Cryptography
-- **Encryption Algorithm:** AES-256-GCM
-- **Key Derivation:** PBKDF2 (100,000 iterations, SHA-256)
-- **Password Hashing:** Argon2id
-- **IV Generation:** Cryptographically secure random values
-
-##  System Architecture Overview
-
-### Zero-Knowledge Flow
-
-This password manager implements a **true zero-knowledge architecture** [web:19][web:181], meaning:
-
-1. **Master Password Never Leaves Your Device** - It's used only for local key derivation
-2. **All Encryption Happens Client-Side** - Passwords are encrypted in your browser before transmission
-3. **Server Stores Only Ciphertext** - The backend never sees plaintext passwords
-4. **You Control the Keys** - Only you can decrypt your data
-
-
-### Architecture Diagram
+<table>
+  <tr>
+    <td width="50%"><img src="assets/screenshots/home.png" alt="Landing page hero showing the same entry decrypted on the device and as ciphertext on the server"></td>
+    <td width="50%"><img src="assets/screenshots/home-storage.png" alt="Landing page table listing where each piece of state lives"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Landing page</sub></td>
+    <td align="center"><sub>Where every piece of state lives</sub></td>
+  </tr>
+  <tr>
+    <td><img src="assets/screenshots/editor.png" alt="New item dialog with the password generator open"></td>
+    <td><img src="assets/screenshots/weak.png" alt="Weak passwords view with a prompt to generate a stronger password"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Item editor with the built-in generator</sub></td>
+    <td align="center"><sub>Weak password audit, scored locally</sub></td>
+  </tr>
+  <tr>
+    <td><img src="assets/screenshots/register.png" alt="Registration page with strength meter and no-recovery acknowledgement"></td>
+    <td><img src="assets/screenshots/delete-confirm.png" alt="Delete confirmation dialog"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Create a vault</sub></td>
+    <td align="center"><sub>In-app confirmation for destructive actions</sub></td>
+  </tr>
+</table>
 
 <p align="center">
-  <img src="assets/pass1.png" alt="pass tracker" width="800">
-  <br>
-  
+  <img src="assets/screenshots/mobile-list.png" alt="Vault list on a phone" width="260">
+  &nbsp;&nbsp;
+  <img src="assets/screenshots/mobile-detail.png" alt="Item detail on a phone" width="260">
 </p>
 
+## Features
 
-### Security Model
+**Security**
+- Client-side AES-256-GCM encryption through the Web Crypto API, with a fresh 96-bit IV per entry
+- Key derived from the master password with PBKDF2-SHA256 (100,000 iterations) and kept in memory only, as a non-extractable `CryptoKey`
+- Server-side login hashing with Argon2id, plus rate limiting on login (5/min)
+- Auto-lock after 10 minutes of inactivity; refreshing the page also drops the key
 
-| Component | Purpose | Location |
-|-----------|---------|----------|
-| Master Password | User authentication + key derivation | Client only (never sent) |
-| Argon2 Hash | Server-side authentication | Server database |
-| Encryption Key | Decrypt/encrypt passwords | Client memory (never sent) |
-| Ciphertext + IV | Encrypted password storage | Server database |
-| Salt | Key derivation randomness | Client localStorage |
+**Vault**
+- Three-pane layout: smart views and folders, searchable list, detail pane
+- Instant search across website, username and folder
+- Favorites, folders, and a **Weak passwords** view. Strength is computed in the browser after decryption, because the server never sees plaintext.
+- Separate one-click copy for username and password; reveal on demand
+- Password generator backed by `crypto.getRandomValues` (8–64 characters, selectable character classes)
+- Keyboard shortcuts: <kbd>/</kbd> search, <kbd>N</kbd> new item, <kbd>↑</kbd>/<kbd>↓</kbd> move through the list, <kbd>Esc</kbd> clear
+- Responsive: the sidebar becomes a drawer and the detail pane a full-screen sheet on small screens
 
+## How it works
 
-### Threat Model Mitigations
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as Browser
+    participant S as Django API
+    participant D as Database
 
-- [x] **Database Breach** - Attacker gets only encrypted data (useless without master password)
-- [x] **Man-in-the-Middle** - HTTPS ensures encrypted channel; no plaintext transmitted
-- [x] **Server Compromise** - Server has no decryption keys; cannot read passwords
-- [x] **Brute Force** - Rate limiting + Argon2 computational cost
-- [x] **Replay Attacks** - CSRF protection + session management
-- [x] **Password Reuse** - Each password encrypted with unique IV
+    Note over B: Sign in
+    B->>S: POST /api/login {username, master password}
+    S->>D: verify Argon2id hash
+    S-->>B: session cookie
+    B->>B: key = PBKDF2(master, salt, 100k)<br/>(salt from localStorage)
 
+    Note over B: Save an entry
+    B->>B: iv = random 12 bytes<br/>ct = AES-GCM(key, iv, password)
+    B->>S: POST /api/items {ct, iv, website, username}
+    S->>D: store ciphertext + iv
 
-### 6. Threat Mitigation Summary
+    Note over B: Read an entry
+    B->>S: GET /api/items
+    S-->>B: [{ct, iv, ...}]
+    B->>B: password = AES-GCM-decrypt(key, iv, ct)
+```
+
+The master password is sent to the server at registration and at login, over the session's connection, so it can be hashed and checked with Argon2id. It is never stored in plaintext, and the encryption key derived from it never leaves the browser.
+
+## Security model
+
+| State | Form | Lives on | Notes |
+|---|---|---|---|
+| Master password | never stored in plaintext | device | Derives the key locally; also sent at login so the server can check its hash |
+| Encryption key | non-extractable `CryptoKey` | device (memory) | Cleared on lock, logout, refresh or 10 min idle |
+| Salt | 16 random bytes | device (`localStorage`) | Generated at registration |
+| Login hash | Argon2id | server | Proves identity; cannot decrypt anything |
+| Ciphertext + IV | Base64 | server | Useless without the key |
 
 | Threat | Mitigation | Status |
-|--------|------------|--------|
-| **Database Breach** | All passwords encrypted with user-specific keys | [x] Mitigated |
-| **MITM Attack** | HTTPS + No plaintext transmission | [x] Mitigated |
-| **Server Compromise** | Zero-knowledge: server can't decrypt | [x] Mitigated |
-| **Brute Force (Login)** | Rate limiting + Argon2 cost | [x] Mitigated |
-| **Brute Force (Encryption)** | AES-256 (2^256 keyspace) | [x] Mitigated |
-| **Rainbow Tables** | Random salts per user | [x] Mitigated |
-| **Replay Attack** | CSRF tokens + session management | [x] Mitigated |
-| **XSS** | Content Security Policy + HTTPOnly cookies |  Partial |
-| **Phishing** | User education required |  User responsibility |
+|---|---|---|
+| Database breach | Only ciphertext and Argon2id hashes are stored | Mitigated |
+| Server compromise | Server never holds the encryption key | Mitigated |
+| Brute-force login | Rate limiting + Argon2id cost | Mitigated |
+| Tampered ciphertext | GCM authentication tag fails to verify | Mitigated |
+| Identical passwords | Unique random IV per entry | Mitigated |
+| Network eavesdropping | No plaintext secrets in transit; use HTTPS in production | Requires HTTPS |
+| XSS | React escaping; no CSP configured yet | Partial |
+| Phishing / weak master password | User responsibility | Not covered |
 
-### 7. Security Best Practices Implemented
+**Trade-offs.** There is no password recovery. The salt lives in the browser that created the vault, so clearing site data, or switching browsers, makes the vault unrecoverable. This is an educational project and has not been audited; do not use it for real secrets.
 
--  No master password storage
--  No encryption keys in localStorage
--  Auto-lock after inactivity
--  HTTPS enforcement (production)
--  CORS restrictions
--  Rate limiting
--  CSRF protection
--  Input validation
--  Parameterized queries (SQL injection prevention)
--  Secure session cookies
+## Getting started
 
+**Requirements:** Python 3.12+, Node.js 18+.
 
+### 1. Backend (Django, port 8000)
 
-##  Challenges & Difficulties Encountered
+```bash
+cd backend
+python -m venv .venv
+# Windows: .venv\Scripts\activate    macOS/Linux: source .venv/bin/activate
+pip install -r ../requirements.txt
+python manage.py migrate
+python manage.py runserver
+```
 
-### 1. **Circular Import Issues with Django Settings**
+> `requirements.txt` includes `psycopg[binary]` for PostgreSQL. The default configuration uses SQLite.
 
-**Problem:** When creating a custom `CsrfExemptSessionAuthentication` class directly in `views.py`, Django's settings attempted to import the module before REST Framework was fully initialized, causing circular dependency errors.
+### 2. Frontend (Next.js, port 3000)
 
-**Solution:** Moved the authentication class to a separate `authentication.py` file to break the circular dependency chain. This taught me the importance of module separation and Django's initialization order.
+```bash
+cd frontend
+npm install --legacy-peer-deps
+npm run dev
+```
 
-### 2. **CORS Configuration Complexity**
+Open <http://localhost:3000>, create a vault, then sign in.
 
-**Problem:** Frontend requests were blocked with "CORS Missing Allow Origin" errors despite having `django-cors-headers` installed.
+The API base URL defaults to `http://localhost:8000/api`. To point the frontend somewhere else, set it in `frontend/.env.local`:
 
-**Solution:** Required careful ordering of middleware (CorsMiddleware must come before CommonMiddleware) and explicit configuration of `CORS_ALLOWED_ORIGINS`, `CORS_ALLOW_CREDENTIALS`, and `CSRF_TRUSTED_ORIGINS`. Testing with different browsers helped identify the exact headers needed.
+```bash
+NEXT_PUBLIC_API_URL=https://your-api.example.com/api
+```
 
-### 3. **Web Crypto API Limitations**
+> `--legacy-peer-deps` is needed because `eslint-config-next@16` declares a peer dependency on ESLint 9, while the project pins ESLint 8.
 
-**Problem:** Web Crypto API operations are asynchronous and promise-based, making state management complex, especially during rapid encrypt/decrypt operations.
+## Project structure
 
-**Solution:** Implemented proper async/await patterns and cached the derived encryption key in Zustand state. This avoided re-deriving keys on every operation while maintaining security.
+```
+backend/
+  config/                Django settings, URLs, WSGI/ASGI
+  passwords/             models, serializers, views, CSRF-exempt session auth
+frontend/
+  app/
+    page.js              landing page
+    login/  register/    auth pages
+    dashboard/           vault (state, filtering, shortcuts, auto-lock)
+  components/
+    vault/               Sidebar, EntryList, EntryDetail, EntryEditor
+    AuthShell.js         shared auth layout and form fields
+    ui.js                logo, dialog, toast, strength meter, monogram
+    icons.js             icon set
+  lib/
+    crypto.js            PBKDF2 key derivation + AES-GCM encrypt/decrypt
+    password.js          strength scoring + CSPRNG generator
+    api.js               axios instance
+    store.js             in-memory auth store (Zustand)
+```
 
-### 4. **Salt Storage Strategy**
+## API
 
-**Problem:** Deciding where to store the user's salt for key derivation without compromising security. Options were: server-side, localStorage, or derived from username.
+All item endpoints require a session cookie.
 
-**Solution:** Stored salt in localStorage (per-user), generated during registration. This balances security (random, user-specific) with practicality (persistent across sessions). Trade-off: If user clears browser data, they lose access unless they re-register.
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/register/` | Create an account (`username`, `email`, `password`) |
+| `POST` | `/api/login/` | Start a session |
+| `POST` | `/api/logout/` | End the session |
+| `GET` | `/api/items/` | List items. Optional `search`, `folder`, `favorite=true` |
+| `POST` | `/api/items/` | Create an item (`encrypted_data`, `iv`, `website`, `username`, `folder`, `favorite`) |
+| `PUT` / `PATCH` | `/api/items/{id}/` | Update an item |
+| `DELETE` | `/api/items/{id}/` | Delete an item |
+| `GET` | `/api/items/folders/` | Folder names with item counts |
 
-### 5. **PostgreSQL Migration Conflicts**
+## Challenges along the way
 
-**Problem:** During development, switching between PostgreSQL and SQLite caused migration conflicts where `auth_user` table wasn't created properly.
+- **Circular imports with a custom auth class.** Defining `CsrfExemptSessionAuthentication` inside `views.py` triggered an import cycle during settings load. Moving it to its own `authentication.py` fixed it.
+- **CORS with credentials.** `CorsMiddleware` has to come before `CommonMiddleware`, and cookies need `CORS_ALLOW_CREDENTIALS`, explicit `CORS_ALLOWED_ORIGINS` and `CSRF_TRUSTED_ORIGINS`.
+- **Async Web Crypto.** Every crypto call returns a promise. Deriving the key once and caching it in memory avoids re-running PBKDF2 for every entry.
+- **Where to keep the salt.** Server, `localStorage`, or derived from the username. `localStorage` keeps it random and per-user, at the cost of tying the vault to one browser.
+- **IV handling.** GCM IVs must be unique but not secret, so they are stored next to the ciphertext.
+- **Scoring strength without plaintext on the server.** The original weak-password filter was sent to the API, which cannot see passwords, so it never matched anything. Strength is now computed in the browser right after decryption, and the plaintext is discarded immediately.
+- **Argon2 on Windows.** `argon2-cffi` needs a prebuilt wheel or the Visual C++ Build Tools.
 
-**Solution:** Learned to properly reset migrations: delete migration files, drop/recreate database, then re-run migrations from scratch. SQLite proved simpler for local development.
+## Roadmap
 
-### 6. **Session vs JWT Authentication**
-
-**Problem:** Deciding between session-based auth (simpler, stateful) vs JWT (stateless, scalable) for the API.
-
-**Solution:** Chose session-based authentication with cookies for simplicity in a single-domain setup. For a microservices architecture, JWT would be preferred. Added CSRF exemption for API-only endpoints.
-
-### 7. **Next.js 14 App Router Learning Curve**
-
-**Problem:** Next.js 14's App Router has different patterns than Pages Router (e.g., `'use client'` directive, server components default).
-
-**Solution:** Extensively read the documentation and ensured all interactive components were properly marked as client components. The `useRouter` from `next/navigation` (not `next/router`) was a key difference.
-
-### 8. **Zustand State Persistence**
-
-**Problem:** Storing the encryption key in Zustand state meant it was lost on page refresh, requiring re-login.
-
-**Solution:** This is intentional for security (key should never be persisted), but required user education about the auto-lock feature and the need to re-authenticate after browser refresh.
-
-### 9. **IV Storage and Management**
-
-**Problem:** Understanding that the IV must be stored alongside ciphertext but doesn't need to be secret (only unique).
-
-**Solution:** Researched GCM mode specifications and learned IVs can be stored in plaintext. Implemented Base64 encoding for clean transmission and storage.
-
-### 10. **Argon2 Installation on Windows**
-
-**Problem:** `argon2-cffi` has binary dependencies that sometimes fail to compile on Windows.
-
-**Solution:** Used pre-built wheels from PyPI and ensured Visual C++ Build Tools were installed. Documented this requirement for Windows users.
-
-##  Roadmap
-
-###  Core Features 
 - [x] Zero-knowledge encryption architecture
-- [x] User registration and authentication
-- [x] Password CRUD operations
-- [x] Search and filtering
-- [x] Folder organization
-- [x] Favorites functionality
-- [ ] Auto-lock mechanism
-
-###  Enhanced Security ( In Progress)
+- [x] Registration, login, rate limiting
+- [x] Item CRUD, folders, favorites, search
+- [x] Auto-lock after inactivity
+- [x] Password strength meter and weak-password view
+- [x] Configurable password generator
+- [ ] Store the salt server-side so vaults work across browsers
+- [ ] Content Security Policy
 - [ ] Two-factor authentication (TOTP)
-- [ ] Password strength meter
-- [ ] Compromised password detection (Have I Been Pwned API)
-- [ ] Security audit logging
-- [ ] Password generation with customizable rules
-- [ ] Biometric authentication (WebAuthn)
-
+- [ ] Breached-password check (Have I Been Pwned, k-anonymity)
+- [ ] Encrypted export / import
+- [ ] WebAuthn unlock
